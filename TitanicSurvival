@@ -1,0 +1,142 @@
+# Titanic Kaggle Machine Learning Competition
+# Datasets are avalible here --> https://www.kaggle.com/competitions/titanic
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier, export_graphviz
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.metrics import confusion_matrix
+from sklearn import tree
+
+titanic = pd.read_csv('train.csv')
+titanic.head()
+titanic.info()
+
+# Training dataset has 177 missing values for passanger age. I elected to imput the median value of 28 into the missing cells.
+# Also, the cabin column has 687 missing values. I was not sure how important this column would be when making predictions in the future so I decided to insert 
+# "Unk" for 'unknown' into the missing values. Additionaly, there were 147 unique cabin values such as "E24" and "C103". To make these values for 
+# managable I removed the numbers from the cabin values. As you will see, after cleaning this column I was left with the values 'U', 'C', 'E', 'G', 'D', 'A', 'B', 'F', 
+# and 'T'. (U for 'Unknown').
+
+titanic.groupby(titanic['Survived']).median()
+
+titanic['Age'].fillna(value = 28.0, inplace = True)
+
+titanic['Cabin'].unique()
+
+titanic.Cabin.nunique()
+
+titanic['Cabin'].fillna(value = 'Unk', inplace = True)
+
+for i in range(0, 891):
+    titanic['Cabin'][i] = titanic['Cabin'][i][0]
+
+titanic['Cabin'].unique()
+
+# To visulaize the distribution of fare prices I plotted a histogram...The majority of ticket sales were less than $50
+
+plt.hist(titanic.Fare)
+
+# Next, I dropped columns that were of no use in for ML and created dummy variables for other columns
+
+titanic.Sex = pd.factorize(titanic.Sex)[0]
+titanic.Cabin = pd.factorize(titanic.Cabin)[0]
+titanic.Embarked = pd.factorize(titanic.Embarked)[0]
+
+titanic.drop(columns = ['Name', 'Ticket','PassengerId'], axis = 1, inplace = True)
+
+X = titanic.drop(columns = 'Survived', axis = 1)
+y = titanic['Survived']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, stratify = y, test_size = 0.2, random_state = 7)
+
+clf = DecisionTreeClassifier(max_depth = 6)
+clf.fit(X_train, y_train)
+clf.score(X_train, y_train)
+
+clf.fit(X_test, y_test)
+clf.score(X_test, y_test)
+
+# The decision tree with a max depth of 6 had a training accuracy of ~ 87% and a test accuracy of ~ 88% which was fairly decent. 
+
+# To vizualize the importance of features I plotted the tree..
+
+tree.plot_tree(clf)
+plt.show()
+
+# Even though the accuracy was decent I wanted to know the precision of the surviving preditions. below is code for the confusion matrix. The tree had a 
+# precision of ~ 81%
+
+y_pred = clf.predict(X_test)
+pd.DataFrame(confusion_matrix(y_test, y_pred))
+
+# The next model I build was a random forest classifier 
+
+clss1 = RandomForestClassifier(max_features = 12, random_state = 7)
+clss1.fit(X_train, y_train)
+
+clss1.score(X_train, y_train)
+
+# Training accuracy ~ 98% 
+
+clss1.fit(X_test,y_test)
+clss1.score(X_test, y_test)
+
+# Test error of ~ 98%, a lot more imporved then the previous tree
+
+Importance = pd.DataFrame({'Importance':clss1.feature_importances_*100}, index=X.columns)
+Importance.sort_values(by='Importance', axis=0, ascending=True).plot(kind='barh', color='r', )
+plt.xlabel('Variable Importance')
+plt.gca().legend_ = None
+
+# The most important features based on the random forest algorithm were Age, Sex, and Fare in that order. 
+# Next, I build another random forest classifier a max depth of 3
+
+clss2 = RandomForestClassifier(max_features = 3, random_state = 7)
+clss2.fit(X_train, y_train)
+
+clss2.score(X_train, y_train)
+
+clss2.fit(X_test,y_test)
+clss2.score(X_test, y_test)
+
+Importance = pd.DataFrame({'Importance':clss2.feature_importances_*100}, index=X.columns)
+Importance.sort_values(by='Importance', axis=0, ascending=True).plot(kind='barh', color='r', )
+plt.xlabel('Variable Importance')
+plt.gca().legend_ = None
+
+# With a training and testing accuracy of ~ 98%. This classifer rearranged the most important features to Sex, Fare, Age in that order
+
+# Boosting algoirthm 
+
+clssb = GradientBoostingClassifier(n_estimators=600, learning_rate=0.03, max_depth=3, random_state=1)
+clssb.fit(X_train, y_train)
+
+Importance = pd.DataFrame({'Importance':clssb.feature_importances_*100}, index=X.columns)
+Importance.sort_values(by='Importance', axis=0, ascending=True).plot(kind='barh', color='r', )
+plt.xlabel('Variable Importance')
+plt.gca().legend_ = None
+
+# Sex, Fare, and Age still most important features in determing survival on the titanic
+
+clssb.fit(X_test,y_test)
+clssb.score(X_test,y_test)
+
+y_pred = clssb.predict(X_test)
+pd.DataFrame(confusion_matrix(y_test, y_pred))
+
+# The boosting algorithm had an overall accuracy of ~98% and a precision of ~98.5%
+
+# Futher analysis shows that based on the training data ~ 61.6% of female passangers survived while only ~ 38.4% of males survived.
+
+# Passangers that spent more on their Fare were more likely to survive, the average fare for people that died was $22 compared to that who survived 
+# spent on average $44 on their fare
+
+# The best chance of survival based on Cabin was in 'D' and the worst was in 'T'
+
+# For emabrked locations, more people on average survived when embarking from location 'C' compared to 'Q' and 'S'
+
+# Lastly, I made my predictions on the test dataset :)
+

@@ -1,0 +1,331 @@
+# This project was intended to better understand the boulder housing market and make predictions regarding house prices. Various models were tested and 
+# evaluated to predict indvidual housing prices. SQFT, lot size, and beds were some of the most significant features in determiing list price. SQFT had the
+# highest correlation with list price (0.77). Also, beds and baths were modelerly correlated which makes sense intuitively, bigger houses with more beds
+# would have more baths. Interestingly, year built did not play a role in preditions when using lasso regression. From my understanding of the housing 
+# market I expected this feature to be one of the more significant ones. In conclusion, this project provided highly accurate predictions for the 
+# boulder housing market and also helped me better understand the listing prices. 
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+
+boulder = pd.read_csv('boulder.csv', index_col = None)
+
+boulder.head()
+
+# Dropping dublicated listing ID's
+boulder.drop_duplicates(subset = 'LISTING.ID', keep = 'first', inplace = True)
+
+# Dropping zero variance columns or near zero variance 
+boulder.var()
+boulder.drop(columns = ['SALE.TYPE', 'CITY', 'STATE', 'STATUS', 'FAVORITE',
+                       'INTERESTED', 'IS.SHORT.SALE'], axis = 1, inplace = True)
+                       
+# Dropping irrelevant columns but keeping address just in case it's needed
+boulder.drop(columns = ['NEXT.OPEN.HOUSE.DATE', 'NEXT.OPEN.HOUSE.START.TIME',
+                       'NEXT.OPEN.HOUSE.END.TIME', 'RECENT.REDUCTION.DATE',
+                       'ORIGINAL.LIST.PRICE', 'LAST.SALE.DATE', 'LAST.SALE.PRICE',
+                       'URL..SEE.http...www.redfin.com.buy.a.home.comparative.market.analysis.FOR.INFO.ON.PRICING.',
+                       'LISTING.ID', 'ORIGINAL.SOURCE','SOURCE'], axis = 1, inplace = True)
+                       
+boulder['ZIP'] = pd.factorize(boulder['ZIP'])[0]
+
+# Keeping data only from Single Family Residential, Condo/Coop, Townhouse type of listings 
+boulder = boulder[boulder['HOME.TYPE'].isin(['Single Family Residential', 'Condo/Coop', 'Townhouse'])]
+
+# Keeping listings with six or less bathrooms
+boulder = boulder[boulder['BEDS'] <= 6]
+
+homeTypeDum = pd.get_dummies(boulder['HOME.TYPE'])
+boulder.drop(columns ='HOME.TYPE', axis =1, inplace = True)
+boulder = pd.concat([boulder, homeTypeDum[['Condo/Coop', 'Single Family Residential']]], axis = 1)
+
+boulder.drop(columns = 'LOCATION', axis = 1, inplace = True)
+
+boulder['BATHS'].fillna(value = 0, inplace = True)
+
+import matplotlib.pyplot as plt
+
+plt.hist(boulder['SQFT'])
+
+plt.hist(boulder['LOT.SIZE'])
+
+# removing outliers
+
+boulder = boulder[boulder['LOT.SIZE'] < 5e+05]
+
+boulder['PARKING.TYPE'].fillna(value = 'Missing', inplace = True)
+
+parkDum = pd.get_dummies(boulder['PARKING.TYPE'])
+
+boulder.drop(columns = 'PARKING.TYPE', axis =1, inplace = True)
+
+boulder = pd.concat([boulder, parkDum['Garage']], axis = 1)
+
+plt.hist(boulder['DAYS.ON.MARKET'])
+
+# Checking for NA values 
+
+boulder.isna().sum()
+
+# Scaling list price by dividing by 1000
+
+scaledPrice = []
+for i in boulder['LIST.PRICE']:
+    listScale = i / 1000
+    scaledPrice.append(listScale)
+boulder['LIST.PRICE'] = scaledPrice
+
+# Linear Regression model to predicting listing price
+
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+X = boulder.drop(['LIST.PRICE', 'ADDRESS'], axis=1)
+y = boulder['LIST.PRICE']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.8, random_state=0)
+
+lr = LinearRegression()
+pred = lr.fit(X_train, y_train).predict(X_test)
+print(f"score: {lr.score(X_test, y_test)}")
+print(f"mse: {mean_squared_error(y_test, pred)}")
+
+# score: 0.79
+# MSE: 332042.6
+
+# Calculating on average how far off predictions were from actual values 
+(mean_squared_error(y_test, pred))**(1/2)
+# 576.23
+
+# Decision Tree Model
+
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+
+regr = DecisionTreeRegressor(max_depth=2)
+regr.fit(X_train, y_train)
+
+pred = regr.predict(X_test)
+
+plt.scatter(pred, y_test, label='medv')
+plt.plot([0, 1], [0, 1], '--k', transform=plt.gca().transAxes)
+plt.xlabel('pred')
+plt.ylabel('y_test')
+
+print(f"score: {regr.score(X_test, y_test)}")
+print(f"mse: {mean_squared_error(y_test, pred)}")
+
+# Score: 0.24
+# MSE: 1201372.5
+
+(mean_squared_error(y_test, pred))**(1/2)
+
+# 1096.1
+
+# Bagging model using all 15 features
+
+regr1 = RandomForestRegressor(max_features=15, random_state=1)
+regr1.fit(X_train, y_train)
+
+pred = regr1.predict(X_test)
+plt.scatter(pred, y_test, label='medv')
+plt.plot([0, 1], [0, 1], '--k', transform=plt.gca().transAxes)
+plt.xlabel('pred')
+plt.ylabel('y_test')
+print(f"score: {regr1.score(X_test, y_test)}")
+print(f"mse: {mean_squared_error(y_test, pred)}")
+
+# Score: 0.70
+# MSE: 475076.8
+
+# Random Forest using 6 features
+
+regr2 = RandomForestRegressor(max_features=6, random_state=1)
+regr2.fit(X_train, y_train)
+
+pred = regr2.predict(X_test)
+print(f"score: {regr2.score(X_test, y_test)}")
+print(f"mse: {mean_squared_error(y_test, pred)}")
+
+# Score: 0.67
+# MSE: 519469.2
+
+# Plotting Importance of Features
+
+Importance = pd.DataFrame({'Importance':regr2.feature_importances_*100}, index=X.columns)
+Importance.sort_values(by='Importance', axis=0, ascending=True).plot(kind='barh', color='r', )
+plt.xlabel('Variable Importance')
+plt.gca().legend_ = None
+
+# Top 4 were SQFT, Baths, Longitude, and Latitude 
+
+# Random forests: using 3 features
+regr3 = RandomForestRegressor(max_features=4, random_state=1)
+regr3.fit(X_train, y_train)
+
+pred = regr3.predict(X_test)
+print(f"score: {regr3.score(X_test, y_test)}")
+print(f"mse: {mean_squared_error(y_test, pred)}")
+
+# Score: 0.65
+# MSE: 557688.4
+
+# Plotted Importance of Features again but nothing changes
+
+Importance = pd.DataFrame({'Importance':regr3.feature_importances_*100}, index=X.columns)
+Importance.sort_values(by='Importance', axis=0, ascending=True).plot(kind='barh', color='r', )
+plt.xlabel('Variable Importance')
+plt.gca().legend_ = None
+
+# Gradient Boosting Regression model using max depth of 3
+
+regrb = GradientBoostingRegressor(n_estimators=500, learning_rate=0.01, max_depth=3, random_state=1)
+regrb.fit(X_train, y_train)
+
+print(f"score: {regrb.score(X_test, y_test)}")
+print(f"mse: {mean_squared_error(y_test, pred)}")
+
+# Score: 0.61
+# Mse: 557688.4
+
+# Plotting feature Importance
+
+Importance = pd.DataFrame({'Importance':regrb.feature_importances_*100}, index=X.columns)
+Importance.sort_values(by='Importance', axis=0, ascending=True).plot(kind='barh', color='r', )
+plt.xlabel('Variable Importance')
+plt.gca().legend_ = None
+
+# Top 4 most important features are SQFT, longitude, latitude, and lot size
+
+# Gradient Boosting using max depth of 4
+
+regrb2 = GradientBoostingRegressor(n_estimators=500, learning_rate=0.01, max_depth=4, random_state=1)
+regrb2.fit(X_train, y_train)
+mean_squared_error(y_test, regrb2.predict(X_test))
+
+# MSE: 352366.2
+
+# Ridge Regression 
+
+# Creating alpha values
+
+alphas = 10**np.linspace(10,-2,100)*0.5
+
+from sklearn.linear_model import Ridge, RidgeCV, Lasso, LassoCV
+
+scaler = StandardScaler()
+X = scaler.fit_transform(X)
+ridge = Ridge()
+coefs = []
+
+for a in alphas:
+    ridge.set_params(alpha=a)
+    ridge.fit(X, y)
+    coefs.append(ridge.coef_)
+    
+np.shape(coefs)
+
+ridge.score(X, y)
+
+# Score: 0.75
+
+# Plotting the wights and alpha
+
+ax = plt.gca()
+ax.plot(alphas, coefs)
+ax.set_xscale('log')
+plt.axis('tight')
+plt.xlabel('alpha')
+plt.ylabel('weights')
+
+X_raw = boulder.drop(['LIST.PRICE', 'ADDRESS'], axis=1)
+y = boulder['LIST.PRICE']
+
+X_train_raw, X_test_raw , y_train, y_test = train_test_split(X_raw, y, test_size=0.5, random_state=1)
+
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train_raw)
+X_test = scaler.transform(X_test_raw)
+
+ridge2 = Ridge(alpha=4)
+ridge2.fit(X_train, y_train)             
+pred2 = ridge2.predict(X_test)           
+print(pd.Series(ridge2.coef_, index=X_raw.columns)) 
+print(mean_squared_error(y_test, pred2)) 
+
+# MSE: 344406.6
+
+ridge3 = Ridge(alpha=0)
+ridge3.fit(X_train, y_train)             
+pred3 = ridge3.predict(X_test)           
+print(pd.Series(ridge3.coef_, index=X_raw.columns)) 
+print(mean_squared_error(y_test, pred3)) 
+
+# MSE: 337011.4
+
+# Tuning alpha paramter with CV
+
+ridgecv = RidgeCV(alphas=alphas)
+ridgecv.fit(X_train, y_train)
+ridgecv.alpha_
+
+# 9.369087114301934
+
+pred = ridgecv.predict(X_test)            
+print(pd.Series(ridgecv.coef_, index=X_raw.columns)) 
+print(mean_squared_error(y_test, pred))
+
+# MSE: 356156.9
+
+ridgeT = Ridge()
+scores = []
+scoremin = np.inf
+alphamin = 0
+for a in alphas:
+    ridgeT.set_params(alpha=a)
+    ridgeT.fit(X_train, y_train)
+    scores.append(mean_squared_error(y_test, ridgeT.predict(X_test)))
+    if scores[-1] < scoremin:
+        scoremin = scores[-1]
+        alphamin = a
+print(scoremin)
+print(alphamin)
+
+ridge5 = Ridge(alpha=ridgecv.alpha_)
+X_S = scaler.fit_transform(X_raw)
+ridge5.fit(X_S, y)
+pd.Series(ridge5.coef_, index=X_raw.columns)
+
+# Lasso 
+# Can be used for feature selection 
+
+lassocv = LassoCV(alphas=alphas, cv=10, max_iter=10000)
+lassocv.fit(X_train, y_train)
+
+mean_squared_error(y_test, lassocv.predict(X_test))
+
+# MSE: 314761.1
+
+pd.Series(lassocv.coef_, index=X_raw.columns)
+
+lasso1 = Lasso(alpha=lassocv.alpha_, max_iter=10000)
+lasso1.fit(X_S, y)
+pd.Series(lasso1.coef_, index=X_raw.columns)
+
+# From lass, most important features are:
+
+# SQFT                         819.142128
+# LOT.SIZE                     160.663421
+
+# Zero weight columns are
+
+# ZIP, Year Built, Days on Market, Type of Home
+
+pd.Series(lassocv.coef_, index=X_raw.columns)

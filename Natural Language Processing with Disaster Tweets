@@ -1,0 +1,186 @@
+# Performing natural language processing with disaster tweets. Information and datasets can be found here: 
+# https://www.kaggle.com/competitions/nlp-getting-started/data?select=sample_submission.csv
+# Logistic regression was used to classify tweets into two categories 1 or 0. target = 1 represents a tweet about a real disaster while target = 0
+# represents a tweet not about a real disaster. The classifer performed the best with a C value equal to 1.6, an n-gram range of (1,3) and a 
+# selection percentile of 9%. With these hyper paramters the classifier had an accuracy around 80% and a precision of 80%. 
+
+# This project was useful for learning about language processing and classification. Next steps would be to try different classifiers such as SVM
+# to attempt to achieve better accuracy. 
+
+import pandas as pd
+import numpy as np
+
+df = pd.read_csv('train.csv', index_col = 0)
+df.info()
+
+df.drop(columns = ['keyword', 'location'], axis = 1, inplace = True)
+
+from sklearn.model_selection import train_test_split
+
+df_train, df_test = train_test_split(df, train_size=0.7, random_state=7)
+
+Y_train = df_train.iloc[0:,-1].values
+text_train = df_train.iloc[0:, 0].values
+
+Y_test = df_test.iloc[0:, -1].values
+text_test = df_test.iloc[0:, 0].values
+
+import re
+from collections import Counter
+
+def ngrams(tokens, n):
+    output = []
+    for i in range(n-1, len(tokens)):
+        ngram = ' '.join(tokens[i-n+1:i+1])
+        output.append(ngram)
+    return output
+
+def features(text, ngram_range=(1,1)):
+    text = text.lower()      # make the string lowercase
+    text = re.sub(r'(.)\1+', r'\1\1', text)     # remove consecutive characters that are repeated more than twice
+    
+    features_in_text = []   # running list of all features in this instance (can be repeated)
+    
+    # treat alphanumeric characters as word tokens (removing anything else),
+    # and extract all n-grams of length n specified by ngram_range
+    
+    text_alphanum = re.sub('[^a-z0-9]', ' ', text)
+    for n in range(ngram_range[0], ngram_range[1]+1):
+        features_in_text += ngrams(text_alphanum.split(), n)
+    
+    # now treat punctuation as word tokens, and get their counts (only unigrams)
+    
+    text_punc = re.sub('[a-z0-9]', ' ', text)
+    features_in_text += ngrams(text_punc.split(), 1)
+    
+    # 'Counter' converts a list into a dictionary whose keys are the list elements 
+    #  and the values are the number of times each element appeared in the list
+    
+    return Counter(features_in_text)
+    
+    from sklearn.feature_extraction import DictVectorizer
+
+vect = DictVectorizer()
+X_train = vect.fit_transform(features(d, ngram_range=(1,3)) for d in text_train)
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, cross_val_predict
+from sklearn.metrics import accuracy_score
+
+base_classifier = LogisticRegression(multi_class='multinomial', solver='lbfgs', tol=1e-2, max_iter=500, random_state=123)
+
+params = [{'C': np.arange(0.1,3,0.5)}]
+
+# this performs 3-fold cross-validation with the above classifier and parameter options
+
+gs_classifier = GridSearchCV(base_classifier, params, cv=3)
+gs_classifier.fit(X_train, Y_train)
+
+print(gs_classifier.get_params())
+
+print("Best parameter settings:", gs_classifier.best_params_)
+print("Validation accuracy: %0.6f" % gs_classifier.best_score_)
+
+flyst = [1,2,3]
+seclyst = [1,2,3]
+for n in flyst:
+    for x in seclyst:
+        X_train = vect.fit_transform(features(d, ngram_range=(n,x)) for d in text_train)
+        gs_classifier = GridSearchCV(base_classifier, params, cv=3)
+        gs_classifier.fit(X_train, Y_train)
+
+
+
+        print(f"ngrams is ({n},{x})")
+        print("Validation accuracy: %0.6f" % gs_classifier.best_score_)
+        
+from sklearn.feature_selection import SelectPercentile, chi2
+
+selection = SelectPercentile(percentile=60, score_func=chi2)
+X_train_selected = selection.fit_transform(X_train, Y_train)
+
+per = [1,2,5,10,20,30,40,50,60,70,80,90,100]
+acc1 = []
+for p in per:
+    X_train = vect.fit_transform(features(d, ngram_range=(1,1)) for d in text_train)
+    
+    selection = SelectPercentile(percentile=p, score_func=chi2)
+    X_train_selected = selection.fit_transform(X_train, Y_train)
+    gs_classifier = GridSearchCV(base_classifier, params, cv=3)
+    gs_classifier.fit(X_train_selected, Y_train)
+    acc1.append(gs_classifier.best_score_)
+
+acc2 = []
+for p in per:
+    X_train = vect.fit_transform(features(d, ngram_range=(1,2)) for d in text_train)
+    
+    selection = SelectPercentile(percentile=p, score_func=chi2)
+    X_train_selected = selection.fit_transform(X_train, Y_train)
+    gs_classifier = GridSearchCV(base_classifier, params, cv=3)
+    gs_classifier.fit(X_train_selected, Y_train)
+    acc2.append(gs_classifier.best_score_)
+    
+acc3 = []
+for p in per:
+    X_train = vect.fit_transform(features(d, ngram_range=(1,3)) for d in text_train)
+    
+    selection = SelectPercentile(percentile=p, score_func=chi2)
+    X_train_selected = selection.fit_transform(X_train, Y_train)
+    gs_classifier = GridSearchCV(base_classifier, params, cv=3)
+    gs_classifier.fit(X_train_selected, Y_train)
+    acc3.append(gs_classifier.best_score_)
+    
+import matplotlib.pyplot as plt
+plt.plot(per, acc1, label = "ngram (1,1)")
+plt.plot(per, acc2, label = "ngram (1,2)")
+plt.plot(per, acc3, label = "ngram (1,3)")
+plt.xlabel('Percentile')
+plt.ylabel('Accuracy')
+leg = plt.legend(loc = "best")
+
+print(max(acc1))
+print(max(acc2))
+print(max(acc3))
+
+for p in np.arange(5,15,1):
+    X_train = vect.fit_transform(features(d, ngram_range=(1,3)) for d in text_train)
+    selection = SelectPercentile(percentile=p, score_func=chi2)
+    X_train_selected = selection.fit_transform(X_train, Y_train)
+    gs_classifier = GridSearchCV(base_classifier, params, cv=3)
+    gs_classifier.fit(X_train_selected, Y_train)
+    print(f' Percent is {p} best score is {gs_classifier.best_score_}')
+    
+ngr = (1,3)
+per = 9
+
+X_train_final = vect.fit_transform(features(d, ngram_range=ngr) for d in text_train)
+X_test_final = vect.transform(features(d, ngram_range=ngr) for d in text_test)
+
+selection = SelectPercentile(percentile=per, score_func=chi2)
+X_train_final = selection.fit_transform(X_train_final, Y_train)
+X_test_final = selection.transform(X_test_final)
+
+gs_classifier = GridSearchCV(base_classifier, params, cv=5)
+gs_classifier.fit(X_train_final, Y_train)
+
+print("Validation accuracy: %0.6f" % gs_classifier.best_score_)
+print("Test accuracy: %0.6f" % accuracy_score(Y_test, gs_classifier.predict(X_test_final)))
+
+from sklearn.metrics import confusion_matrix, classification_report
+
+print(classification_report(Y_test, gs_classifier.predict(X_test_final), digits=3))
+
+df_test = pd.read_csv('test.csv')
+
+df_test.drop(columns = ['keyword', 'location'], axis = 1, inplace = True)
+
+df_test_text = df_test.iloc[0:,-1].values
+
+df_test_text
+
+df_test2 = vect.transform(features(d, ngram_range=ngr) for d in df_test_text)
+df_test2 = selection.transform(df_test2)
+pred = gs_classifier.predict(df_test2)
+
+df_test['target'] = pred
+    

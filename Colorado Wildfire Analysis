@@ -1,3 +1,0 @@
-# Pulled CO wildfire data from SQL database found here --> https://www.kaggle.com/datasets/rtatman/188-million-us-wildfires
-# SELECT * FROM Fires WHERE STATE = 'CO';
-
